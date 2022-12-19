@@ -1,4 +1,5 @@
 # import flask
+import uuid # for public id
 from flask_sqlalchemy import SQLAlchemy
 from flask import Flask, request, jsonify, make_response
 from  werkzeug.security import generate_password_hash, check_password_hash
@@ -20,6 +21,7 @@ db = SQLAlchemy(app)
 # Database ORMs
 class User(db.Model):
     id = db.Column(db.Integer, primary_key = True)
+    public_id = db.Column(db.String(50), unique = True)
     name = db.Column(db.String(100))
     email = db.Column(db.String(70), unique = True)
     password = db.Column(db.String(80))
@@ -33,20 +35,22 @@ def token_required(f):
     def decorated(*args, **kwargs):
         token = None
         # jwt is passed in the request header
-        if 'x-access-token' in request.headers:
-            token = request.headers['x-access-token']
+        if 'X-Access-Token' in request.headers:
+            token = request.headers['X-Access-Token']
+            print(token,type(token))
         # return 401 if token is not passed
         if not token:
             return jsonify({'message' : 'Token is missing !!'}), 401
   
         try:
             # decoding the payload to fetch the stored details
-            data = jwt.decode(token, app.config['SECRET_KEY'])
+            data = jwt.decode(token, app.config['SECRET_KEY'], algorithms=["HS256"])
             current_user = User.query\
-                .filter_by(email = data['email'])\
+                .filter_by(public_id = data['public_id'])\
                 .first()
-        except:
+        except Exception as e:
             return jsonify({
+                'error' : f'{e}',
                 'message' : 'Token is invalid !!'
             }), 401
         # returns the current logged in users contex to the routes
@@ -61,22 +65,24 @@ def token_required(f):
 def get_users_data(current_user):
     # querying the database
     # for all the entries in it
-    users = User.query.all()
+
     # converting the query objects
     # to list of jsons
     output = []
-    user = users[current_user]
-    if user.coupon:
+    
+    if current_user.coupon:
         validate = "Successfull"
+    else :
+        validate = "no coupon found"
     # appending the user data json
     # to the response list
     output.append({
-        'name' : user.name,
-        'usage' : user.usage,
+        'public_id': current_user.public_id,
+        'name' : current_user.name,
         'coupon' : validate
     })
   
-    return jsonify({current_user : output})
+    return jsonify({f"{current_user}" : output})
 
 # route for logging user in
 @app.route('/login', methods =['POST'])
@@ -108,9 +114,9 @@ def login():
         # generates the JWT Token
         token = jwt.encode({
             'public_id': user.public_id,
-            'exp' : datetime.utcnow() + timedelta(minutes = 30)
-        }, app.config['SECRET_KEY'])
-  
+            'exp' : datetime.now() + timedelta(minutes = 30)
+        }, app.config['SECRET_KEY'], algorithm="HS256")
+        print(token,type(token))
         return make_response(jsonify({'token' : token}), 201) #.decode('UTF-8')
     # returns 403 if password is wrong
     return make_response(
@@ -124,7 +130,6 @@ def login():
 def signup():
     # creates a dictionary of the form data
     data = request.form
-  
     # gets name, email and password
     name, email = data.get('name'), data.get('email')
     password = data.get('password')
@@ -136,6 +141,7 @@ def signup():
     if not user:
         # database ORM object
         user = User(
+            public_id = str(uuid.uuid4()),
             name = name,
             email = email,
             password = generate_password_hash(password)
@@ -153,35 +159,45 @@ def signup():
 # getting users coupons and checking if are valid
 @app.route('/coupon', methods =['POST'])
 @token_required
-def coupon_validator():
+def coupon_validator(current_user):
     coupon = None
     # checking for coupon in header
-    if 'coupon' in request.headers:
-        coupon = request.headers['coupon']
+    if 'coupon' in request.form:
+        coupon = request.form['coupon']
     # return 401 if token is not passed
     if not coupon:
         return jsonify({'message' : 'coupon is missing !!'}), 401
 
     try:
+        print(coupon)
         if coupon[0] == 'x' and coupon[-1] == 'Q':
             covalue = sum([ord(i) for i in coupon])
-            if 396 < covalue < 399 :
+            if 396 <= covalue <= 399 :
+                print("Value of Coupon : ", covalue)
                 # checking for existing coupon
                 expierdcoupon = User.query\
                     .filter_by(coupon = coupon)\
                     .first()
                 if not expierdcoupon:
-                    # database ORM object
-                    newcoupon = User(
-                        coupon = coupon
-                    )
-                    # insert new coupon
-                    db.session.add(newcoupon)
+                    # update records ,database ORM object
+                    user = User.query.filter_by(name=current_user.name).first()
+                    user.coupon = coupon
                     db.session.commit()
+                else :
+                    return make_response('Coupon already exists. ', 202)
                 return make_response('Coupon Successfully registered.', 201)
+            else:
+                raise Exception
         else :
             raise Exception
     except:
         return jsonify({
             'message' : 'coupon is invalid !!'
         }), 401
+        
+
+if __name__ == "__main__":
+    # setting debug to True enables hot reload
+    # and also provides a debugger shell
+    # if you hit an error while running the server
+    app.run(debug = True)
