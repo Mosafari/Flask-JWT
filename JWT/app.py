@@ -23,8 +23,8 @@ class User(db.Model):
     name = db.Column(db.String(100))
     email = db.Column(db.String(70), unique = True)
     password = db.Column(db.String(80))
-    date = db.Column(db.TEXT, default='')
-    day = db.Column(db.String(20), default = '')
+    # edit db ORM  to see how many times user used this api
+    usage = db.Column(db.Integer)
     
 
 # decorator for verifying the JWT
@@ -70,8 +70,7 @@ def get_users_data(current_user):
     # to the response list
     output.append({
         'name' : user.name,
-        'date' : user.date,
-        'day' : user.day
+        'usage' : user.usage
     })
   
     return jsonify({current_user : output})
@@ -116,4 +115,34 @@ def login():
         403,
         {'WWW-Authenticate' : 'Basic realm ="Wrong Password !!"'}
     )
+    
+    # signup route
+@app.route('/signup', methods =['POST'])
+def signup():
+    # creates a dictionary of the form data
+    data = request.form
   
+    # gets name, email and password
+    name, email = data.get('name'), data.get('email')
+    password = data.get('password')
+  
+    # checking for existing user
+    user = User.query\
+        .filter_by(email = email)\
+        .first()
+    if not user:
+        # database ORM object
+        user = User(
+            name = name,
+            email = email,
+            password = generate_password_hash(password)
+        )
+        # insert user
+        db.session.add(user)
+        db.session.commit()
+  
+        return make_response('Successfully registered.', 201)
+    else:
+        # returns 202 if user already exists
+        return make_response('User already exists. Please Log in.', 202)
+
