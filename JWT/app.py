@@ -23,8 +23,8 @@ class User(db.Model):
     name = db.Column(db.String(100))
     email = db.Column(db.String(70), unique = True)
     password = db.Column(db.String(80))
-    # edit db ORM  to see how many times user used this api
-    usage = db.Column(db.Integer)
+    # Coupon validators
+    coupon = db.Column(db.String(10))
     
 
 # decorator for verifying the JWT
@@ -66,11 +66,14 @@ def get_users_data(current_user):
     # to list of jsons
     output = []
     user = users[current_user]
+    if user.coupon:
+        validate = "Successfull"
     # appending the user data json
     # to the response list
     output.append({
         'name' : user.name,
-        'usage' : user.usage
+        'usage' : user.usage,
+        'coupon' : validate
     })
   
     return jsonify({current_user : output})
@@ -146,3 +149,39 @@ def signup():
         # returns 202 if user already exists
         return make_response('User already exists. Please Log in.', 202)
 
+
+# getting users coupons and checking if are valid
+@app.route('/coupon', methods =['POST'])
+@token_required
+def coupon_validator():
+    coupon = None
+    # checking for coupon in header
+    if 'coupon' in request.headers:
+        coupon = request.headers['coupon']
+    # return 401 if token is not passed
+    if not coupon:
+        return jsonify({'message' : 'coupon is missing !!'}), 401
+
+    try:
+        if coupon[0] == 'x' and coupon[-1] == 'Q':
+            covalue = sum([ord(i) for i in coupon])
+            if 396 < covalue < 399 :
+                # checking for existing coupon
+                expierdcoupon = User.query\
+                    .filter_by(coupon = coupon)\
+                    .first()
+                if not expierdcoupon:
+                    # database ORM object
+                    newcoupon = User(
+                        coupon = coupon
+                    )
+                    # insert new coupon
+                    db.session.add(newcoupon)
+                    db.session.commit()
+                return make_response('Coupon Successfully registered.', 201)
+        else :
+            raise Exception
+    except:
+        return jsonify({
+            'message' : 'coupon is invalid !!'
+        }), 401
