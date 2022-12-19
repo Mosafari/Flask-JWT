@@ -1,9 +1,11 @@
 # import flask
-from flask import Flask, request, jsonify
 from flask_sqlalchemy import SQLAlchemy
+from flask import Flask, request, jsonify, make_response
+from  werkzeug.security import generate_password_hash, check_password_hash
 # imports for PyJWT authentication
 import jwt
 from functools import wraps
+from datetime import datetime, timedelta
 
 # creates Flask object
 app = Flask(__name__)
@@ -56,7 +58,7 @@ def token_required(f):
 # this route sends back data of current logged in users
 @app.route('/user', methods =['GET'])
 @token_required
-def get_all_users(current_user):
+def get_users_data(current_user):
     # querying the database
     # for all the entries in it
     users = User.query.all()
@@ -68,9 +70,50 @@ def get_all_users(current_user):
     # to the response list
     output.append({
         'name' : user.name,
-        'email' : user.email,
         'date' : user.date,
         'day' : user.day
     })
   
     return jsonify({current_user : output})
+
+# route for logging user in
+@app.route('/login', methods =['POST'])
+def login():
+    # creates dictionary of form data
+    auth = request.form
+  
+    if not auth or not auth.get('email') or not auth.get('password'):
+        # returns 401 if any email or / and password is missing
+        return make_response(
+            'Could not verify',
+            401,
+            {'WWW-Authenticate' : 'Basic realm ="Login required !!"'}
+        )
+    # checking for existing user
+    user = User.query\
+        .filter_by(email = auth.get('email'))\
+        .first()
+  
+    if not user:
+        # returns 401 if user does not exist
+        return make_response(
+            'Could not verify',
+            401,
+            {'WWW-Authenticate' : 'Basic realm ="User does not exist !!"'}
+        )
+  
+    if check_password_hash(user.password, auth.get('password')):
+        # generates the JWT Token
+        token = jwt.encode({
+            'public_id': user.public_id,
+            'exp' : datetime.utcnow() + timedelta(minutes = 30)
+        }, app.config['SECRET_KEY'])
+  
+        return make_response(jsonify({'token' : token}), 201) #.decode('UTF-8')
+    # returns 403 if password is wrong
+    return make_response(
+        'Could not verify',
+        403,
+        {'WWW-Authenticate' : 'Basic realm ="Wrong Password !!"'}
+    )
+  
