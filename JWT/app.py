@@ -51,3 +51,26 @@ def token_required(f):
         return  f(current_user, *args, **kwargs)
   
     return decorated
+
+# User Database Route
+# this route sends back data of current logged in users
+@app.route('/user', methods =['GET'])
+@token_required
+def get_all_users(current_user):
+    # querying the database
+    # for all the entries in it
+    users = User.query.all()
+    # converting the query objects
+    # to list of jsons
+    output = []
+    user = users[current_user]
+    # appending the user data json
+    # to the response list
+    output.append({
+        'name' : user.name,
+        'email' : user.email,
+        'date' : user.date,
+        'day' : user.day
+    })
+  
+    return jsonify({current_user : output})
